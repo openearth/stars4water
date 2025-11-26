@@ -15,6 +15,10 @@ The overall implementation of the project is structured in 7 Work Packages (WP).
   <img src="images/WorkplanNew.png" width="650" />
 </div>
 
+### Github repository 
+
+This repository contains the codes developed within the activities of WP3, WP4, and WP5, for the definition of new tools and models that enable better decision-making by stakeholders in different hydrological basins within and outside Europe.
+
 ### Funding
 
 This project has received funding from the European Union’s HORIZON Research and Innovation Actions Programme under Grant Agreement No. 101059372
