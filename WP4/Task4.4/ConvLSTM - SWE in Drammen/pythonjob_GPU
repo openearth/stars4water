@@ -1,0 +1,58 @@
+#!/bin/bash -x
+# author: Leandro Avila
+# e-mail: l.avila@fz-juelich.de
+
+#SBATCH --job-name=CNN_LSTM
+#SBATCH --account=esmtst
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=48
+#SBATCH --output=mpi-out.%j
+#SBATCH --error=mpi-err.%j
+#SBATCH --gres=gpu:4
+#SBATCH --partition=develbooster
+#SBATCH --time=00:30:00
+#SBATCH --mail-type=ALL
+
+module purge
+
+module load Stages/2024
+module load StdEnv/2024
+module load GCC/12.3.0
+module load OpenMPI/4.1.5
+module load git/2.41.0-nodocs
+module load tmux/3.3a
+module load HDF5/1.14.2-serial
+module load netCDF/4.9.2-serial
+module load ecCodes/2.31.0
+module load CDO/2.3.0
+module load ncview/2.1.9
+module load SciPy-Stack/2023a
+module load netcdf4-python/1.6.4-serial
+module load h5py/3.9.0-serial
+module load mpi4py/3.1.4
+module load Cartopy/0.22.0
+module load pyproj/3.6.0
+module load GDAL/3.6.2
+module load Shapely/2.0.1
+module load dask/2023.9.2
+module load scikit-learn/1.3.1
+module load PyTorch/2.1.2
+module load tqdm/4.66.1
+
+#source /p/project1/cesmtst/avila2/geo_env/bin/activate
+
+#srun --nodes=1 --ntasks=1 --gres=gpu:4 python CNN_deep_Transformer.py -t
+
+#srun --nodes=1 --ntasks=1 --gres=gpu:4 python CNN_deep.py -t
+#srun --nodes=1 --ntasks=1 --gres=gpu:4 python eval_ConvLSTM_ECMWF.py -t
+#srun --nodes=1 --ntasks=1 --gres=gpu:4 python eval_ConvLSTM_recursiv.py -t
+#srun --nodes=1 --ntasks=1 --gres=gpu:4 python CNN_improved.py -t
+#srun --nodes=1 --ntasks=1 --gres=gpu:4 python ConvLSTM_recursiv2.py -t
+#srun --nodes=1 --ntasks=1 --gres=gpu:4 python eval_CNNLSTM_weekly.py -t
+
+#srun --nodes=1 --ntasks=1 --gres=gpu:4  python eval_CNNLSTM_weekly_ECMWF.py -t
+#srun --nodes=1 --ntasks=1 --gres=gpu:4  python eval_CNNLSTM_weekly.py -t
+srun --nodes=1 --ntasks=1 --gres=gpu:4  python eval_CNNLSTM_weekly.py -t
+
+
