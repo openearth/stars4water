@@ -1,0 +1,1 @@
+**Stars4Water** is an innovative European research project that leverages satellite Earth observation data and artificial intelligence to monitor and manage water resources. This repository contains the core codebase, tools, and methodologies developed for the Stars4Water initiative.
