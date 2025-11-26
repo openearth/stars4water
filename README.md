@@ -11,7 +11,9 @@ The collaborative project funded under the Horizon Europe Framework Programme th
 
 The overall implementation of the project is structured in 7 Work Packages (WP). Central in the project are the 7 River Basin Hubs, which will serve as living labs for co-creation and validation of new services, models and tools that support climate resilient water resources planning. 
 
-<img src="images/WorkplanNew.png" width="250" />
+<div align="center">
+  <img src="images/WorkplanNew.png" width="450" />
+</div>
 
 ### Funding
 
