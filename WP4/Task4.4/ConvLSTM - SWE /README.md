@@ -15,27 +15,15 @@ This repository contains a deep learning pipeline for predicting Snow Water Equi
 
 ### Core Model Files
 
-1. **snow_model.py**
+1. **ConvLSTM.py**
    - Contains the core neural network architecture:
      - `ConvLSTMCell`: Basic building block for ConvLSTM operations
      - `AutoregressiveConvLSTM`: Main model class with autoregressive forecasting
-
-2. **snow_data.py**
-   - Data loading and preprocessing utilities:
      - `SweDataset`: PyTorch Dataset class for SWE prediction
-     - `load_data`: Function to load and align input datasets
-     - Data normalization and temporal encoding functions
 
 ### Training Scripts
 
-3. **ConvLSTM_7days.py**
-   - Main training script with:
-     - Model initialization
-     - Training loop with validation
-     - Metric calculation (MAE, RMSE, R2)
-     - Checkpoint saving
-
-4. **ConvLSTM_7days_torchjsc.py**
+2. **ConvLSTM_7days_torchjsc.py**
    - Advanced version with:
      - Distributed training support
      - Gradient accumulation
@@ -45,13 +33,7 @@ This repository contains a deep learning pipeline for predicting Snow Water Equi
 
 ### Evaluation Scripts
 
-5. **check_model.py**
-   - Model evaluation and prediction script:
-     - Loads trained model
-     - Generates forecasts
-     - Saves results as NetCDF files
-
-6. **eval_CNNLSTM_weekly.py**
+3. **eval_CNNLSTM_weekly.py**
    - Extended evaluation script:
      - Handles different dataset configurations
      - Produces masked predictions
