@@ -8,40 +8,82 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import os
 import time
+import pandas as pd 
+import pathlib as pl
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 SEQ_LEN = 60  
-FORECAST_STEPS = 7 
+FORECAST_STEPS = 7  
 BATCH_SIZE = 2  
 EPOCHS = 50  
-INPUT_FEATURES = 7  
+INPUT_FEATURES = 7 
+LAT_DIM = 233  
+LON_DIM = 389  
 HIDDEN_SIZE = 128  
-
 
 def load_data():
     
     swe_ds = xr.open_dataset('/p/data1/slts/avila2/Stars4Water/WP4/SWE_Drammen/datasets/NVE_SeNorge/SeNorge_WGS84/drammen2/swe_2010_2020.nc')
-    prec_ds = xr.open_dataset('/p/data1/slts/avila2/Stars4Water/WP4/SWE_Drammen/datasets/NVE_SeNorge/SeNorge_WGS84/drammen2/input_rr_2010_2020.nc')
+    precip_ds = xr.open_dataset('/p/data1/slts/avila2/Stars4Water/WP4/SWE_Drammen/datasets/NVE_SeNorge/SeNorge_WGS84/drammen2/input_rr_2010_2020.nc')
     temp_ds = xr.open_dataset('/p/data1/slts/avila2/Stars4Water/WP4/SWE_Drammen/datasets/NVE_SeNorge/SeNorge_WGS84/drammen2/input_tg_2010_2020.nc')
     topo_ds = xr.open_dataset('/p/data1/slts/avila2/Stars4Water/WP4/SWE_Drammen/datasets/NVE_SeNorge/SeNorge_WGS84/drammen2/topo.nc')
 
     swe = swe_ds['snow_water_equivalent'].values.transpose(0, 2, 1)
-    precip = prec_ds['rr'].values.transpose(0, 2, 1)
+    precip = precip_ds['rr'].values.transpose(0, 2, 1)
     temp = temp_ds['tg'].values.transpose(0, 2, 1)
 
+    # Convert all times to "days" (ignoring hours, minutes, etc.)
+    swe_days = swe_ds['time'].values.astype('datetime64[D]')
+    precip_days = precip_ds['time'].values.astype('datetime64[D]')
+    temp_days = temp_ds['time'].values.astype('datetime64[D]')
+
+    # Find common days (2022 only, since precip/temp are 2022)
+    common_days = np.intersect1d(swe_days, precip_days)
+    common_days = np.intersect1d(common_days, temp_days)
+
+    if len(common_days) == 0:
+        raise ValueError("No overlapping days between datasets!")
+
+    print(f"Aligned days: {len(common_days)} (from {common_days[0]} to {common_days[-1]})")
+
+    # Select only overlapping days in each dataset
+    swe_ds = swe_ds.sel(time=np.isin(swe_days, common_days))
+    precip_ds = precip_ds.sel(time=np.isin(precip_days, common_days))
+    temp_ds = temp_ds.sel(time=np.isin(temp_days, common_days))
+
+    # Verify alignment
+    assert np.array_equal(
+        swe_ds['time'].values.astype('datetime64[D]'),
+        precip_ds['time'].values.astype('datetime64[D]')
+    ), "SWE and precipitation days do not match!"
+    
+    assert np.array_equal(
+        swe_ds['time'].values.astype('datetime64[D]'),
+        temp_ds['time'].values.astype('datetime64[D]')
+    ), "SWE and temperature days do not match!"
+
+    # Extract and transpose data
+    swe = swe_ds['snow_water_equivalent'].values.transpose(0, 2, 1)
+    precip = precip_ds['rr'].values.transpose(0, 2, 1)
+    temp = temp_ds['tg'].values.transpose(0, 2, 1)
+    times = swe_ds['time'].values  # Now aligned by day
+
+    # Prepare static data (topography + latitude grid)
     lat_grid = np.meshgrid(swe_ds['lat'].values, swe_ds['lon'].values)[0]
     static = np.stack([topo_ds['dem_mean'].values.T, lat_grid])
 
-    return swe, precip, temp, static
+    return swe, precip, temp, static, times
 
+# Clase Dataset
 class SweDataset(Dataset):
-    def __init__(self, swe, precip, temp, static, time_indices, stats=None):
+    def __init__(self, swe, precip, temp, static, time_indices, times, stats=None):
         self.swe = np.nan_to_num(np.log1p(swe), nan=0.0)  # log1p transform
         self.precip = np.nan_to_num(precip, nan=0.0)
         self.temp = np.nan_to_num(temp, nan=0.0)
         self.static = np.nan_to_num(static, nan=0.0)
         self.time_indices = time_indices
         self.stats = stats if stats else self._compute_stats()
+        self.times = times
 
     def _compute_stats(self):
         return {
@@ -78,25 +120,25 @@ class SweDataset(Dataset):
     def __getitem__(self, idx):
         actual_t = self.time_indices[idx + SEQ_LEN]
 
-        # SWE: Past 60 days (t-60 to t-1)
+        # 1. SWE: Past 60 days (t-60 to t-1)
         swe_past = self._normalize_dynamic(
             self.swe[actual_t - SEQ_LEN : actual_t],
             'swe'
         )
 
-        # Precipitation: Past 60 days (t-60 to t-1) + Future 7 days (t to t+6)
+        # 2. Precipitation: Past 60 days (t-60 to t-1) + Future 7 days (t to t+6)
         precip_seq = self._normalize_dynamic(
             self.precip[actual_t - SEQ_LEN : actual_t + FORECAST_STEPS],
             'precip'
         )
 
-        # Temperature: Past 60 days (t-60 to t-1) + Future 7 days (t to t+6)
+        # 3. Temperature: Past 60 days (t-60 to t-1) + Future 7 days (t to t+6)
         temp_seq = self._normalize_dynamic(
             self.temp[actual_t - SEQ_LEN : actual_t + FORECAST_STEPS],
             'temp'
         )
 
-        # Temporal encoding for ALL timesteps (history + future)
+        # 4. Temporal encoding for ALL timesteps (history + future)
         all_days = np.arange(actual_t - SEQ_LEN, actual_t + FORECAST_STEPS)
         all_months = ((all_days % 365) // 30) + 1  # Approximate month
         all_doy = (all_days % 365) + 1  # Day of year
@@ -126,23 +168,25 @@ class SweDataset(Dataset):
         hist_month_cos = np.tile(hist_month_cos[:, np.newaxis, np.newaxis], (1, height, width))
         hist_day_sin = np.tile(hist_day_sin[:, np.newaxis, np.newaxis], (1, height, width))
         hist_day_cos = np.tile(hist_day_cos[:, np.newaxis, np.newaxis], (1, height, width))
+        
+        forecast_dates = self.times[actual_t : actual_t + FORECAST_STEPS]
 
-        # Stack all historical dynamic features
+        # 5. Stack all historical dynamic features
         dynamic = np.stack([
-            swe_past,                         # Channel 1: SWE (60 steps)
-            precip_seq[:SEQ_LEN],             # Channel 2: Past precip (60 steps)
-            temp_seq[:SEQ_LEN],               # Channel 3: Past temp (60 steps)
-            hist_month_sin,                   # Channel 4: Month (sin)
-            hist_month_cos,                   # Channel 5: Month (cos)
-            hist_day_sin,                     # Channel 6: Day of year (sin)
-            hist_day_cos                      # Channel 7: Day of year (cos)
-        ], axis=1)  
+            swe_past,                         # Channel 0: SWE (60 steps)
+            precip_seq[:SEQ_LEN],             # Channel 1: Past precip (60 steps)
+            temp_seq[:SEQ_LEN],               # Channel 2: Past temp (60 steps)
+            hist_month_sin,                   # Channel 3: Month (sin)
+            hist_month_cos,                   # Channel 4: Month (cos)
+            hist_day_sin,                     # Channel 5: Day of year (sin)
+            hist_day_cos                      # Channel 6: Day of year (cos)
+        ], axis=1)  # Shape: (60, 7, height, width)
 
-        # Future weather (t to t+6)
-        future_precip = precip_seq[SEQ_LEN:]  
-        future_temp = temp_seq[SEQ_LEN:]      
+        # 6. Future weather (t to t+6)
+        future_precip = precip_seq[SEQ_LEN:]  # Shape: (7, height, width)
+        future_temp = temp_seq[SEQ_LEN:]      # Shape: (7, height, width)
 
-        # Future temporal features (t to t+6)
+        # 7. Future temporal features (t to t+6)
         future_temporal = np.stack([
             fut_month_sin,
             fut_month_cos,
@@ -150,24 +194,26 @@ class SweDataset(Dataset):
             fut_day_cos
         ], axis=1)  # Shape: (7, 4)
 
-        # Static features
-        static = self._normalize_static() 
+        # 8. Static features
+        static = self._normalize_static()  # Shape: (2, height, width)
 
-        # Target: SWE for next 7 days (t to t+6)
+        # 9. Target: SWE for next 7 days (t to t+6)
         target = self._normalize_dynamic(
             self.swe[actual_t : actual_t + FORECAST_STEPS],
             'swe'
-        )  
+        )  # Shape: (7, height, width)
 
         return (
-            torch.tensor(dynamic, dtype=torch.float32),    
-            torch.tensor(static, dtype=torch.float32),     
-            torch.tensor(future_precip, dtype=torch.float32),  
-            torch.tensor(future_temp, dtype=torch.float32),   
-            torch.tensor(future_temporal, dtype=torch.float32), 
-            torch.tensor(target, dtype=torch.float32)      
+            torch.tensor(dynamic, dtype=torch.float32),    # (60, 7, H, W)
+            torch.tensor(static, dtype=torch.float32),     # (2, H, W)
+            torch.tensor(future_precip, dtype=torch.float32),  # (7, H, W)
+            torch.tensor(future_temp, dtype=torch.float32),    # (7, H, W)
+            torch.tensor(future_temporal, dtype=torch.float32), # (7, 4)
+            torch.tensor(target, dtype=torch.float32),
+            forecast_dates # (7, H, W)
         )
 
+# Modelo ConvLSTM Autoregresivo con Future Forcing
 class ConvLSTMCell(nn.Module):
     def __init__(self, input_dim, hidden_dim, kernel_size):
         super().__init__()
@@ -229,7 +275,6 @@ class AutoregressiveConvLSTM(nn.Module):
         self.conv_out = nn.Conv2d(hidden_dim, 1, kernel_size=1)
 
     def forward(self, *args, **kwargs):
-        
         # Handle DataParallel input wrapping
         if len(args) == 1 and isinstance(args[0], (list, tuple)):
             args = args[0]
@@ -266,7 +311,7 @@ class AutoregressiveConvLSTM(nn.Module):
                 x_t = h[i]
         
         predictions = []
-        last_swe = x[:, -1, 0:1]  
+        last_swe = x[:, -1, 0:1]  # Last SWE value (channel 0)
         
         # Autoregressive prediction
         for step in range(FORECAST_STEPS):
@@ -278,15 +323,15 @@ class AutoregressiveConvLSTM(nn.Module):
             weather_feat = self.weather_proj(weather_t)
             
             # Process temporal features
-            temporal_feat = self.temp_proj(future_temporal[:, step])  
+            temporal_feat = self.temp_proj(future_temporal[:, step])  # [B, hidden_dim]
             temporal_feat = temporal_feat.view(batch_size, self.hidden_dim, 1, 1).expand(-1, -1, height, width)
             
             # Combine all features
             combined = torch.cat([
-                last_swe,                    
-                weather_feat,                
-                static_feat,                 
-                temporal_feat                
+                last_swe,                    # 1 channel
+                weather_feat,                # hidden_dim channels
+                static_feat,                 # hidden_dim channels
+                temporal_feat                # hidden_dim channels
             ], dim=1)
             
             x_next = self.step_proj(combined)
@@ -309,35 +354,20 @@ class AutoregressiveConvLSTM(nn.Module):
         
         return torch.cat(predictions, dim=1)
 
-class BiasAwareLoss(nn.Module):
-    def __init__(self, alpha=0.8):
-        super().__init__()
-        self.alpha = alpha
+def denormalize_swe(normalized_swe, stats):
+    log_swe = normalized_swe * (stats['swe_max'] - stats['swe_min']) + stats['swe_min']
+    swe = np.expm1(log_swe)  # Undo log1p transformation
+    return swe
 
-    def forward(self, pred, target):
-        mse = nn.MSELoss()(pred, target)
-        bias = torch.mean(pred - target)
-        return mse + self.alpha * bias**2
 
-def calculate_metrics(output, target, stats):
-    output = output.detach().cpu().numpy().flatten()
-    target = target.detach().cpu().numpy().flatten()
+swe, precip, temp, static,times = load_data()
 
-    output_denorm = np.expm1(output * (stats['swe_max'] - stats['swe_min']) + stats['swe_min'])
-    target_denorm = np.expm1(target * (stats['swe_max'] - stats['swe_min']) + stats['swe_min'])
-    
-    return (
-        mean_absolute_error(target_denorm, output_denorm),
-        np.sqrt(mean_squared_error(target_denorm, output_denorm)),
-        r2_score(target_denorm, output_denorm)
-    )
-
-swe, precip, temp, static = load_data()
-
-train_ds = SweDataset(swe, precip, temp, static, list(range(0, 8*365)))
+#train_ds = SweDataset(swe, precip, temp, static, list(range(0, 8*365)),times)
 val_ds = SweDataset(swe, precip, temp, static, list(range(9*365, 10*365)), stats=train_ds.stats)
 
-np.save('training_stats_autoreg3.npy', train_ds.stats)
+total_days = len(train_ds.time_indices)  
+max_start_idx = total_days - SEQ_LEN - FORECAST_STEPS 
+num_steps= max_start_idx // 7  
 
 model = AutoregressiveConvLSTM(
     input_dim=INPUT_FEATURES,
@@ -347,139 +377,111 @@ model = AutoregressiveConvLSTM(
     static_channels=2
 ).to(device)
 
-epoc=49
-MODEL_PATH = 'saved_models_autoreg2/ConvLSTM2_autoreg_epoch_{}.pth'.format(epoc)
+MODEL_PATH = 'saved_models_autoreg_drammen2/epochcd13_8.pth'
 
 checkpoint = torch.load(MODEL_PATH, map_location=device)
-state_dict = checkpoint['model_state_dict']  # Access the model weights inside the checkpoint
-
+state_dict = checkpoint['model_state_dict']  
 state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
-
 model.load_state_dict(state_dict)
-model = torch.nn.DataParallel(model)
-model = model.to(device)
 
-criterion = BiasAwareLoss(alpha=0.6).to(device)
+model.eval()
+stats_dt=train_ds.stats
+#%%
 
-optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=1e-5)
-optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-for state in optimizer.state.values():
-    for k, v in state.items():
-        if isinstance(v, torch.Tensor):
-            state[k] = v.to(device)
+targets_rec = []
+predictions_rec = []
+prediction_dates = []
 
-scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=3, verbose=True)
+t=0
+dynamic, static_feat, future_precip, future_temp, future_temporal, target,forecast_date = train_ds[t]
 
-train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=False)
-val_loader = DataLoader(val_ds, batch_size=BATCH_SIZE, shuffle=False)
+dynamic = dynamic.unsqueeze(0).to(device)
+static_feat = static_feat.unsqueeze(0).to(device)#%%
+future_precip = future_precip.unsqueeze(0).to(device)
+future_temp = future_temp.unsqueeze(0).to(device)
+future_temporal = future_temporal.unsqueeze(0).to(device)
 
-os.makedirs('saved_models_autoreg3', exist_ok=True)
+with torch.no_grad():
+    for t in  range(0,7*num_steps,7):
 
-with open('training_log_autoreg3.txt', 'w') as log_file:
-    log_file.write('Epoch,Train Loss,Val Loss,Train MAE,Train RMSE,Train R2,Val MAE,Val RMSE,Val R2,Time (s),LR\n')
-    
-    for epoch in range(EPOCHS):
-        start_time = time.time()
-        
-        model.train()
-        train_loss, train_mae, train_rmse, train_r2 = 0, 0, 0, 0
-        
-        for batch_idx, (dynamic, static_feat, future_precip, future_temp, future_temporal, target) in enumerate(train_loader):
-            dynamic = dynamic.to(device)
-            static_feat = static_feat.to(device)
-            future_precip = future_precip.to(device)
-            future_temp = future_temp.to(device)
-            future_temporal = future_temporal.to(device)
-            target = target.to(device)
-            
-            optimizer.zero_grad()
-            output = model(
-                x=dynamic,
-                static=static_feat,
-                future_precip=future_precip,
-                future_temp=future_temp,
-                future_temporal=future_temporal,
-                target=target,
-                epoch=epoch
-            )
-            loss = criterion(output, target)
-            loss.backward()
-            optimizer.step()
-            
-            train_loss += loss.item()
-            mae, rmse, r2 = calculate_metrics(output, target, train_ds.stats)
-            train_mae += mae
-            train_rmse += rmse
-            train_r2 += r2
-            
-            print(f'Epoch {epoch+1}/{EPOCHS} | Batch {batch_idx+1}/{len(train_loader)} | Loss: {loss.item():.4f}', end='\r')
+        target = target.unsqueeze(0).to(device)
+        target_np = target.detach().cpu().numpy()
+        target_denorm = denormalize_swe(target_np, stats_dt)
+        #date_indices.append(date_idx)
 
-        avg_train_loss = train_loss / len(train_loader)
-        avg_train_mae = train_mae / len(train_loader)
-        avg_train_rmse = train_rmse / len(train_loader)
-        avg_train_r2 = train_r2 / len(train_loader)
-        
-        model.eval()
-        val_loss, val_mae, val_rmse, val_r2 = 0, 0, 0, 0
-        
-        with torch.no_grad():
-            for dynamic, static_feat, future_precip, future_temp, future_temporal, target in val_loader:
-                dynamic = dynamic.to(device)
-                static_feat = static_feat.to(device)
-                future_precip = future_precip.to(device)
-                future_temp = future_temp.to(device)
-                future_temporal = future_temporal.to(device)
-                target = target.to(device)
-                
-                output = model(
-                    x=dynamic,
+        # Predict the next SWE
+        output = model(x=dynamic,
                     static=static_feat,
                     future_precip=future_precip,
                     future_temp=future_temp,
-                    future_temporal=future_temporal
-                )
-                loss = criterion(output, target)
-                val_loss += loss.item()
-                mae, rmse, r2 = calculate_metrics(output, target, train_ds.stats)
-                val_mae += mae
-                val_rmse += rmse
-                val_r2 += r2
-        
-        avg_val_loss = val_loss / len(val_loader)
-        avg_val_mae = val_mae / len(val_loader)
-        avg_val_rmse = val_rmse / len(val_loader)
-        avg_val_r2 = val_r2 / len(val_loader)
-        
-        epoch_time = time.time() - start_time
-        
-        current_lr = optimizer.param_groups[0]['lr']
-        
-        log_file.write(
-            f'{epoch + 1},'
-            f'{avg_train_loss:.6e},'
-            f'{avg_val_loss:.6e},'
-            f'{avg_train_mae:.4f},'
-            f'{avg_train_rmse:.4f},'
-            f'{avg_train_r2:.4f},'
-            f'{avg_val_mae:.4f},'
-            f'{avg_val_rmse:.4f},'
-            f'{avg_val_r2:.4f},'
-            f'{epoch_time:.1f},'
-            f'{current_lr:.2e}\n'
-        )
-        log_file.flush()
-        
-        print(f'\nEpoch {epoch+1} completed in {epoch_time:.1f}s')
-        print(f'Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}')
-        print(f'Train MAE: {avg_train_mae:.4f} | Val MAE: {avg_val_mae:.4f}')
-        print(f'Learning Rate: {current_lr:.2e}\n')
-        
-        checkpoint = {
-        'epoch': epoch,
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
-        'learning_rate': optimizer.param_groups[0]['lr']}
+                    future_temporal=future_temporal)
 
-        torch.save(checkpoint, f'saved_models_autoreg3/ConvLSTM2_autoreg_epoch_{epoch}.pth')
-        
-        scheduler.step(avg_val_loss)
+        output_np = output.detach().cpu().numpy()
+        pred_denorm = denormalize_swe(output_np, stats_dt)
+        pred_denorm = np.clip(pred_denorm, 0, None)
+
+        out_log=torch.tensor(output_np)
+        new_swe=torch.cat([dynamic[0,7:,0,:,:],output[0,:,:,:]], dim=0)
+        new_swe = new_swe.unsqueeze(1)
+
+        next_dynamic, _,future_precip,future_temp,future_temporal, target,forecast_date= train_ds[t]
+
+        future_precip = future_precip.unsqueeze(0).to(device)
+        future_temp = future_temp.unsqueeze(0).to(device)
+        future_temporal = future_temporal.unsqueeze(0).to(device)
+
+        dynamic = torch.cat([new_swe.to(device), next_dynamic[:, 1:7, :, :].to(device)], dim=1)
+        dynamic=dynamic.unsqueeze(0).to(device)
+
+        #dynamic=next_dynamic.unsqueeze(0).to(device)
+
+        predictions_rec.extend(pred_denorm[0,:, :, :])
+        targets_rec.extend(target_denorm[0,:, :, :])
+        prediction_dates.extend(forecast_date)
+
+        print(f"Step {t} completed")
+
+#%%
+predictions_rec= np.array(predictions_rec)
+targets_rec = np.array(targets_rec)
+prediction_dates=pd.to_datetime(prediction_dates)
+
+swe_ds = xr.open_dataset('/p/data1/slts/avila2/Stars4Water/WP4/SWE_Drammen/datasets/NVE_SeNorge/SeNorge_WGS84/drammen2/swe_2010_2020.nc')
+    
+lons=swe_ds['lon'].values
+lats=swe_ds['lat'].values
+
+predictions = predictions_rec.transpose(0,2,1)  
+targets = targets_rec.transpose(0, 2, 1)         
+
+mask=swe_ds['snow_water_equivalent'].isel(time=0)/swe_ds['snow_water_equivalent'].isel(time=0)
+mask=mask.values 
+
+predictions=predictions*mask.transpose(0, 1)
+targets=targets*mask.transpose(0, 1)
+
+nc_out = xr.Dataset(
+    {'prediction': (('time','lat','lon'),predictions),
+     'target': (('time','lat','lon'),targets)},
+    coords={
+        'time':prediction_dates,
+        'lon':lons,
+        'lat':lats})
+
+nc_out['prediction'].attrs= {'standard_name': 'swe','long_name':"Snow Water Equivalent", 'units':"mm"}
+nc_out['target'].attrs= {'standard_name': 'swe','long_name':"Snow Water Equivalent", 'units':"mm"}
+
+nc_out['lat'].attrs= {'standard_name': 'latitude','long_name':"Latitude", 'units':"degrees_north",'axis':'Y'}
+nc_out['lon'].attrs= {'standard_name': 'longitude','long_name':"Longitude", 'units':"degrees_east",'axis':'X'}
+
+
+start_date = prediction_dates[0].strftime('%Y')
+end_date = prediction_dates[-1].strftime('%Y')
+
+output_filename = f"netcdf/SWE_CNNLSTM_weekly_SeNorgeFULL2_{start_date}_{end_date}.nc"
+netcdf_out = pl.Path(output_filename)
+netcdf_out.parent.mkdir(parents=True, exist_ok=True)
+
+
+nc_out.to_netcdf(path=netcdf_out)
+print(f"Results saved to: {output_filename}")

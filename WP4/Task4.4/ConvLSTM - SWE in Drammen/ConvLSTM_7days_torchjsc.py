@@ -58,17 +58,21 @@ def save_to_hdf5(swe, precip, temp, static, filename):
         f.attrs['lat_std'] = np.nanstd(static[1])
 
 def load_data():
-    swe_ds = xr.open_dataset('/p/data1/slts/avila2/Stars4Water/WP4/SWE_Drammen/datasets/NVE_SeNorge/SeNorge_WGS84/drammen2/swe_2010_2020.nc')
-    prec_ds = xr.open_dataset('/p/data1/slts/avila2/Stars4Water/WP4/SWE_Drammen/datasets/NVE_SeNorge/SeNorge_WGS84/drammen2/input_rr_2010_2020.nc')
-    temp_ds = xr.open_dataset('/p/data1/slts/avila2/Stars4Water/WP4/SWE_Drammen/datasets/NVE_SeNorge/SeNorge_WGS84/drammen2/input_tg_2010_2020.nc')
-    topo_ds = xr.open_dataset('/p/data1/slts/avila2/Stars4Water/WP4/SWE_Drammen/datasets/NVE_SeNorge/SeNorge_WGS84/drammen2/topo.nc')
+
+    source_path='/p/data1/slts/avila2/Stars4Water/WP4/SWE_Drammen/datasets/region_drammen'
+
+    swe_ds = xr.open_dataset(f'{source_path}/swe_2010_2020.nc')
+    input_ds = xr.open_dataset(f'{source_path}/input_2010_2020.nc')
+    topo_ds = xr.open_dataset(f'{source_path}/topo.nc')
 
     swe = swe_ds['snow_water_equivalent'].values.transpose(0, 2, 1)
-    precip = prec_ds['rr'].values.transpose(0, 2, 1)
-    temp = temp_ds['tg'].values.transpose(0, 2, 1)
+    precip = input_ds['rr'].values.transpose(0, 2, 1)
+    temp = input_ds['tg'].values.transpose(0, 2, 1)
 
     lat_grid = np.meshgrid(swe_ds['lat'].values, swe_ds['lon'].values)[0]
     static = np.stack([topo_ds['dem_mean'].values.T, lat_grid])
+
+    os.makedirs("input/drammen", exist_ok=True)
     
     save_to_hdf5(swe, precip, temp, static, 'input/drammen/data.h5')
     return 'input/drammen/data.h5'
@@ -322,8 +326,7 @@ class BiasAwareLoss(nn.Module):
         return mse_loss + self.alpha * bias**2
 
 def calculate_metrics(output, target, stats):
-    """Calculate metrics with proper denormalization"""
-    # Denormalize predictions and targets
+
     output_denorm = torch.expm1(output * (stats['swe_max'] - stats['swe_min']) + stats['swe_min'])
     target_denorm = torch.expm1(target * (stats['swe_max'] - stats['swe_min']) + stats['swe_min'])
     
