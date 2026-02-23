@@ -106,8 +106,8 @@ class SweDataset(Dataset):
         # 5. Stack all historical dynamic features
         dynamic = np.stack([
             swe_past,                         # Channel 0: SWE (60 steps)
-            precip_seq[:self.seq_len],        # Channel 1: Past precip (60 steps)
-            temp_seq[:self.seq_len],          # Channel 2: Past temp (60 steps)
+            precip_seq[:self.seq_len],             # Channel 1: Past precip (60 steps)
+            temp_seq[:self.seq_len],               # Channel 2: Past temp (60 steps)
             hist_month_sin,                   # Channel 3: Month (sin)
             hist_month_cos,                   # Channel 4: Month (cos)
             hist_day_sin,                     # Channel 5: Day of year (sin)
@@ -170,10 +170,12 @@ class ConvLSTMCell(nn.Module):
         return h_next, c_next
 
 class AutoregressiveConvLSTM(nn.Module):
-    def __init__(self, input_dim, hidden_dim, kernel_size, num_layers, static_channels):
+    def __init__(self, input_dim, hidden_dim, kernel_size, num_layers, static_channels,forecast_steps,epochs=50):
         super().__init__()
         self.num_layers = num_layers
         self.hidden_dim = hidden_dim
+        self.forecast_steps=forecast_steps
+        self.epochs=epochs
         
         # Initial layer to process dynamic input
         self.input_conv = nn.Conv2d(input_dim, hidden_dim, kernel_size=3, padding=1)
@@ -245,7 +247,7 @@ class AutoregressiveConvLSTM(nn.Module):
         last_swe = x[:, -1, 0:1]  # Last SWE value (channel 0)
         
         # Autoregressive prediction
-        for step in range(FORECAST_STEPS):
+        for step in range(self.forecast_steps):
             # Process weather features
             weather_t = torch.stack([
                 future_precip[:, step], 
@@ -278,7 +280,7 @@ class AutoregressiveConvLSTM(nn.Module):
             
             # Scheduled sampling
             if self.training and target is not None:
-                use_gt = torch.rand(1).item() < (0.5 * (1 - epoch/EPOCHS))
+                use_gt = torch.rand(1).item() < (0.5 * (1 - epoch/self.epochs))  # Decaying probability
                 last_swe = target[:, step:step+1] if use_gt else next_swe.detach()
             else:
                 last_swe = next_swe
@@ -289,33 +291,3 @@ def denormalize_swe(normalized_swe, stats):
     log_swe = normalized_swe * (stats['swe_max'] - stats['swe_min']) + stats['swe_min']
     swe = np.expm1(log_swe)  
     return swe
-
-
-class BiasAwareLoss(nn.Module):
-    def __init__(self, alpha=0.8):
-        super().__init__()
-        self.alpha = alpha
-        self.mse = nn.MSELoss()
-
-    def forward(self, pred, target):
-        mse_loss = self.mse(pred, target)
-        bias = torch.mean(pred - target)
-        return mse_loss + self.alpha * bias**2
-
-def calculate_metrics(output, target, stats):
-
-    output_denorm = torch.expm1(output * (stats['swe_max'] - stats['swe_min']) + stats['swe_min'])
-    target_denorm = torch.expm1(target * (stats['swe_max'] - stats['swe_min']) + stats['swe_min'])
-    
-    # Calculate metrics
-    mae = torch.mean(torch.abs(output_denorm - target_denorm))
-    mse = torch.mean((output_denorm - target_denorm)**2)
-    rmse = torch.sqrt(mse)
-    
-    # Calculate R2 score
-    target_mean = torch.mean(target_denorm)
-    ss_total = torch.sum((target_denorm - target_mean)**2)
-    ss_res = torch.sum((output_denorm - target_denorm)**2)
-    r2 = 1 - (ss_res / ss_total)
-    
-    return mae, rmse, r2
