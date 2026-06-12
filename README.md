@@ -19,6 +19,12 @@ The overall implementation of the project is structured in 7 Work Packages (WP).
 
 This repository contains the codes developed within the activities of WP3, WP4, and WP5, for the definition of new tools and models that enable better decision-making by stakeholders in different hydrological basins within and outside Europe.
 
+### Binder
+
+Launch the reservoir storage forecasting notebook directly in your browser — no installation required:
+
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/openearth/stars4water/HEAD?labpath=WP3%2FTask3.4%2FReservoir%20Storage%20Forecasting%2F2.3_Next_ETreservoirs.ipynb)
+
 ### Funding
 
 This project has received funding from the European Union’s HORIZON Research and Innovation Actions Programme under Grant Agreement No. 101059372
