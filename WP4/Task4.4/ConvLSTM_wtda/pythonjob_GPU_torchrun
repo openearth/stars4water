@@ -11,7 +11,7 @@
 #SBATCH --error=mpi-err.%j
 #SBATCH --gres=gpu:4
 #SBATCH --partition=develbooster
-#SBATCH --time=02:00:00
+#SBATCH --time=01:30:00
 #SBATCH --mail-type=ALL
 
 module purge
@@ -40,16 +40,6 @@ module load scikit-learn/1.3.1
 module load PyTorch/2.1.2
 module load tqdm/4.66.1
 
-#module load OpenMPI/4.1.5
-#module load SciPy-bundle/2023.07
-#module load scikit-learn/1.3.1
-#module load matplotlib/3.7.2
-#module load xarray/2023.8.0
-#module load netcdf4-python/1.6.4-serial
-#module load HDF5/1.14.2-serial
-
-#module load PyTorch/2.1.2
-#module load torchvision/0.16.2
 
 source /p/project1/cesmtst/avila2/torchrun_jsc_env/bin/activate
 
@@ -71,16 +61,4 @@ srun env -u CUDA_VISIBLE_DEVICES python -u -m torchrun_jsc \
        --rdzv_id="$SLURM_JOB_ID" \
        --rdzv_endpoint="$MASTER_ADDR":"$MASTER_PORT" \
        --rdzv_backend static \
-       /p/scratch/cesmtst/avila2/Stars4Water/SWE/CNN_LSTM/ConvLSTM_7days_torchjsc.py -t --log-level DEBUG
-
-#srun --nodes=1 --ntasks=1 --gres=gpu:4 python CNN_deep_Transformer.py -t
-
-#srun --nodes=1 --ntasks=1 --gres=gpu:4 python CNN_deep.py -t
-#srun --nodes=1 --ntasks=1 --gres=gpu:4 python eval_ConvLSTM_ECMWF.py -t
-#srun --nodes=1 --ntasks=1 --gres=gpu:4 python eval_ConvLSTM_recursiv.py -t
-#srun --nodes=1 --ntasks=1 --gres=gpu:4 python CNN_improved.py -t
-#srun --nodes=1 --ntasks=1 --gres=gpu:4 python ConvLSTM_recursiv.py -t
-
-#srun --nodes=1 --ntasks=1 --gres=gpu:4  python ConvLSTM_schedule_training.py -t
-
-
+      /p/scratch/cesmtst/avila2/emulator_DE06/Parflow_DE06/scripts/ConvLSTM_wtd_distributed_torchsjc.py -t --log-level DEBUG
