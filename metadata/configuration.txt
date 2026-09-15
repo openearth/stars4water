@@ -1,0 +1,5 @@
+[PostGIS]
+user = postgres
+host = localhost
+password = ghn13227
+database = stars4water

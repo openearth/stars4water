@@ -31,6 +31,7 @@ import numpy as np
 from datetime import time
 import pandas as pd
 import uuid
+from xml.sax.saxutils import escape
 
 """
 directory where metadata is stored
@@ -49,38 +50,68 @@ d = (
 read the xslx with the metadata
 Check column headers first, in some cases there are extra spaces there!!!
 """
-mxlsx = r"C:\projectinfo\eu\stars4water\work\Datasets_for_portal20240726.xlsx"
-dfm = pd.read_excel(
-    mxlsx, skiprows=2, sheet_name="Sheet1", na_filter=False, index_col=0
-)
+
+mxlsx = r"C:\projectinfo\eu\stars4water\work\Additional_Dataset_for_portal_Sept2025_v2.xlsx"
+mxlsx = r"C:\projectinfo\eu\stars4water\work\Local datasets version 2026-03-02.xlsx"
+sn = "S4W Datasets"
+mxlsx = r"C:\projectinfo\eu\stars4water\work\Datasets_for_portal_20260825.xlsx"
+sn = 'Sheet1'
+mxlsx = r"C:\projectinfo\eu\stars4water\work\Additional_Dataset_for_portal_Sept2025_v2.xlsx"
+sn = "S4W Datasets"
+
+dctxls = {}
+dctxls['a'] = ("Additional_Dataset_for_portal_Sept2025.xlsx","S4W Datasets")
+dctxls['b'] = ("Additional_Dataset_for_portal_Sept2025_v2.xlsx","S4W Datasets")
+dctxls['c'] = ("Datasets_for_portal_20260825.xlsx","Sheet1")
+dctxls['d'] = ("Datasets_for_portal20240324.xlsx","Sheet1")
+dctxls['e'] = ("Datasets_for_portal20240726.xlsx","Sheet1")
+dctxls['f'] = ("Local datasets version 2026-03-02.xlsx","S4W Datasets")
+
 
 """
 Read the xmltemplate
 """
 txml = r".\iso19139_template.xml"
+pathnm = r"C:\projectinfo\eu\stars4water\work"
 
-for r in range(1, len(dfm)):
-    title = dfm["Title of the source"][r]
-    if title != "":
-        "create new file"
-        fn = os.path.join(tdir, ".".join([title.replace(" ", ""), "xml"]))
+for key, (file, sheet) in dctxls.items():
+    print(f"Key: {key}, File: {file}, Sheet: {sheet}")
 
-        "open the template"
-        fxml = open(txml, "r+")
-        xml = fxml.read()
-        fxml.close()
+    dfm = pd.read_excel(
+        os.path.join(pathnm, file), skiprows=2, sheet_name=sheet, na_filter=False, index_col=0
+    )
 
-        "define unique identifier"
-        uid = str(uuid.uuid4())
-        print(uid)
+    """
+    Some sheets use "Roll" instead of "Role" as column header, normalize it
+    """
+    if "Roll" in dfm.columns and "Role" not in dfm.columns:
+        dfm = dfm.rename(columns={"Roll": "Role"})
+    if "Roll" in d and "Role" not in d:
+        d["Role"] = d.pop("Roll")
 
-        xml = xml.replace("{uuid}", uid)
-        for k in d.keys():
-            print("k", k)
-            try:
-                print("--".join([k, d[k], str(dfm[k][r])]))
-                xml = xml.replace("{" + d[k] + "}", str(dfm[k][r]))
-            except:
-                print("it went wrong with", k, d[k], dfm[k][r])
-        with open(fn, "w+", encoding="utf-8") as fm:
-            fm.write(xml)
+    for r in range(len(dfm)):
+        title = dfm["Title of the source"].iloc[r]
+        if title != "":
+            "create new file"
+            fn = os.path.join(tdir, ".".join([title.replace(" ", ""), "xml"]))
+
+            "open the template"
+            fxml = open(txml, "r+")
+            xml = fxml.read()
+            fxml.close()
+
+            "define unique identifier"
+            uid = str(uuid.uuid4())
+            
+
+            xml = xml.replace("{uuid}", uid)
+            for k in d.keys():
+                try:
+                    value = escape(str(dfm[k].iloc[r]))
+                    xml = xml.replace("{" + d[k] + "}", value)
+                except Exception as e:
+                    value = repr(dfm[k].iloc[r]) if k in dfm.columns else "<missing column>"
+                    print("it went wrong with", k, d[k], value, "-", e)
+            with open(fn, "w+", encoding="utf-8") as fm:
+                fm.write(xml)
+            print(uid, fn)
