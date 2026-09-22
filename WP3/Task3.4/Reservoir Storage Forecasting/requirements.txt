@@ -1,9 +1,0 @@
-# Dependencies for 2.3_Next_ETreservoirs.ipynb & 2.4_Final_ETreservoirs.ipynb
-# Requires Python 3.10 or later (scikit-learn >= 1.7 drops Python 3.9 support)
-
-numpy>=1.24
-pandas>=2.0
-matplotlib>=3.7
-scikit-learn==1.7.0
-jupyter>=1.0
-ipykernel>=6.0
