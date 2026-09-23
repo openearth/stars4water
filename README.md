@@ -31,6 +31,21 @@ Two machine-learning approaches are applied **point-by-point** to predict the **
 - **Target:** monthly **water table depth anomaly**.
 - **Output / evaluation:** per-point metrics (**KGE, correlation r, PBIAS, RMSE**) for training and test, plus basin maps of the best configuration and the test-period performance.
 
+### 2. Reservoir Storage Forecasting — UK, Spain, France (WP3, Task 3.4)
+
+An Extra-Trees regression model to predict the **monthly reservoir storage** across reservoirs in the UK, Spain (Duero) and France (Seine).
+
+- **What it does:** Given the recent history of the reservoir storage, plus forecast rainfall and temperature over the upstream catchment, the model forecasts the next month's storage for each reservoir.
+
+Example data and usage are detailed in a walk-through notebook: 2.3_Next_ETreservoirs.ipynb
+An example of how to train a similar model in another region can be found in 2.4_Final_ETreservoirs.ipynb
+DOI: 10.5281/zenodo.22899268
+
+#### Binder
+
+Launch the reservoir storage forecasting notebook directly in your browser — no installation required:
+
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/openearth/stars4water/HEAD?labpath=WP3%2FTask3.4%2FReservoir%20Storage%20Forecasting%2F2.3_Next_ETreservoirs.ipynb)
 
 ### Funding
 
