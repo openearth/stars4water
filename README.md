@@ -38,7 +38,9 @@ An Extra-Trees regression model to predict the **monthly reservoir storage** acr
 - **What it does:** Given the recent history of the reservoir storage, plus forecast rainfall and temperature over the upstream catchment, the model forecasts the next month's storage for each reservoir.
 
 Example data and usage are detailed in a walk-through notebook: 2.3_Next_ETreservoirs.ipynb
+
 An example of how to train a similar model in another region can be found in 2.4_Final_ETreservoirs.ipynb
+
 DOI: 10.5281/zenodo.22899268
 
 #### Binder
