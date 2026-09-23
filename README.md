@@ -59,6 +59,15 @@ A spatio-temporal **autoregressive ConvLSTM** predicts the **Snow Water Equivale
 - **Target:** SWE (mm) for the next 7 days, spatially resolved.
 - **Training/usage:** GPU training on a single node or **distributed** (multi-GPU, mixed precision, HDF5 data) for HPC. Evaluation generates **NetCDF** fields of predicted and observed SWE (metrics: **MAE, RMSE, R²**).
 
+### 4. Water Table Depth (WTD) emulator — Europe and US (WP4, Task 4.4 and WP5, Task 5.3)
+
+A **ConvLSTM emulator** estimates the **Water Table Depth** over the European domain (Parflow DE06/TSMP), mimicking the physically based model.
+
+- **What it does:** from static terrain/soil attributes and daily atmospheric/soil forcing, it predicts the next day's **water table depth anomaly** on a Europe-wide grid.
+- **Inputs:** static features (**topography, slope x/y, clay and sand content**) and dynamic daily features (**Antecedent Precipitation Index** from precipitation, and **volumetric water content**), using a **30-day** look-back window.
+- **Target:** daily **WTD anomaly (WTDA)**; the absolute WTD is recovered by adding the **daily WTD climatology**.
+- **Training:** on daily TSMP/Parflow anomalies (**2001–2018**), distributed GPU training; evaluated on both TSMP and **ERA5** forcing.
+- **Use cases:** full-domain **hindcast**, **benchmarking against in-situ groundwater observations** (European WTDobs and US CONUS).
 
 ### Funding
 
