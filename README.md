@@ -19,11 +19,18 @@ The overall implementation of the project is structured in 7 Work Packages (WP).
 
 This repository contains the codes developed within the activities of WP3, WP4, and WP5, for the definition of new tools and models that enable better decision-making by stakeholders in different hydrological basins within and outside Europe.
 
-### Binder
+## Models
 
-Launch the reservoir storage forecasting notebook directly in your browser — no installation required:
+### 1. Water Table Depth (WTD) — Seine River Basin (WP3, Task 3.4)
 
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/openearth/stars4water/HEAD?labpath=WP3%2FTask3.4%2FReservoir%20Storage%20Forecasting%2F2.3_Next_ETreservoirs.ipynb)
+Two machine-learning approaches are applied **point-by-point** to predict the **monthly water table depth (WTD)** across the Seine river basin.
+
+- **What it does:** Given the recent history of the groundwater level and various predictors, the model forecasts the next month's WTD for each location of the basin.
+- **Inputs:** monthly GRACE terrestrial-water-storage, precipitation, maximum temperature and evapotranspiration time series per point. Several **predictor combinations** (from 1 to 4 predictors) and **lag windows (4, 6 or 8 months)** are tested.
+- **Models:** a **Random Forest Regressor** and a single-layer **LSTM**. For every point, the best combination of predictors + lag (maximizing **KGE** on the test period) is selected.
+- **Target:** monthly **water table depth anomaly**.
+- **Output / evaluation:** per-point metrics (**KGE, correlation r, PBIAS, RMSE**) for training and test, plus basin maps of the best configuration and the test-period performance.
+
 
 ### Funding
 
