@@ -47,6 +47,17 @@ Launch the reservoir storage forecasting notebook directly in your browser — n
 
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/openearth/stars4water/HEAD?labpath=WP3%2FTask3.4%2FReservoir%20Storage%20Forecasting%2F2.3_Next_ETreservoirs.ipynb)
 
+### 3. Snow Water Equivalent (SWE) — Drammen, Norway, Alps and Rocky Mountains (WP4, Task 4.4 and WP5, Task 5.3)
+
+A spatio-temporal **autoregressive ConvLSTM** predicts the **Snow Water Equivalent (SWE)** over a **7-day** horizon for the Drammen region.
+
+- **What it does:** from the last **60 days** of snow, weather and seasonal information, the network forecasts the SWE map for each of the next **7 days**, day by day (autoregressively).
+- **Inputs:** past SWE, precipitation and temperature, plus future precipitation/temperature (forcing) and static features (**topography** and **latitude**).
+- **Model:** convolutional LSTM cells with a static-feature branch and a future-weather branch; trained with **teacher forcing (scheduled sampling)** and a bias-aware loss.
+- **Target:** SWE (mm) for the next 7 days, spatially resolved.
+- **Training/usage:** GPU training on a single node or **distributed** (multi-GPU, mixed precision, HDF5 data) for HPC. Evaluation generates **NetCDF** fields of predicted and observed SWE (metrics: **MAE, RMSE, R²**).
+
+
 ### Funding
 
 This project has received funding from the European Union’s HORIZON Research and Innovation Actions Programme under Grant Agreement No. 101059372
